@@ -50,7 +50,7 @@ class HttpResponse : Http
                 Headers.Remove("Content-Length");
         }
     }
-    public string Server = "Raven 1.0";
+    public string Server = "Raven 1.0.0";
 
     public HttpResponse(string? body, int statusCode)
     {
