@@ -3,7 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.14.36212.18 d17.14
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "raven", "raven\raven.csproj", "{8735B61C-A052-4B14-B828-2946C533BA23}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RavenLib", "RavenLib\RavenLib.csproj", "{21664136-6164-41D8-BC75-79CE843D20CD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebServer", "WebServer\WebServer.csproj", "{1E304002-0EFE-48AE-9470-2A68CFDD9A7E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -11,10 +13,14 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{8735B61C-A052-4B14-B828-2946C533BA23}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{8735B61C-A052-4B14-B828-2946C533BA23}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{8735B61C-A052-4B14-B828-2946C533BA23}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{8735B61C-A052-4B14-B828-2946C533BA23}.Release|Any CPU.Build.0 = Release|Any CPU
+		{21664136-6164-41D8-BC75-79CE843D20CD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{21664136-6164-41D8-BC75-79CE843D20CD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{21664136-6164-41D8-BC75-79CE843D20CD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{21664136-6164-41D8-BC75-79CE843D20CD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1E304002-0EFE-48AE-9470-2A68CFDD9A7E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1E304002-0EFE-48AE-9470-2A68CFDD9A7E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1E304002-0EFE-48AE-9470-2A68CFDD9A7E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1E304002-0EFE-48AE-9470-2A68CFDD9A7E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
