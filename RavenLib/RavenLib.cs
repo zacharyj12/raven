@@ -86,11 +86,11 @@ namespace RavenLib
     public class Http
     {
         // Function to read from a file, from a client path.  
-        public static string ReadFile(string clientPath)
+        public static string ReadFile(string clientPath, string webDirectory = "web")
         {
             try
             {
-                var fullPath = "web/" + clientPath; // Assuming files are in a "web" directory  
+                var fullPath = Path.Combine(webDirectory, clientPath);
                 return System.IO.File.ReadAllText(fullPath);
             }
             catch (Exception ex)
