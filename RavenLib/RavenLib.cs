@@ -1,6 +1,7 @@
 ﻿using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 
 namespace RavenLib
 {
@@ -118,8 +119,12 @@ namespace RavenLib
             Console.WriteLine($"Server started at {host}:{port}");
             while (true)
             {
-                var client = listener.AcceptTcpClient();
-                ThreadPool.QueueUserWorkItem(_ => HandleClient(client));
+                try
+                {
+                    var client = listener.AcceptTcpClient();
+                    ThreadPool.QueueUserWorkItem(_ => HandleClient(client));
+                } catch (Exception ex) { Console.WriteLine(ex.ToString()); return; }
+               
             }
         }
         private void HandleClient(TcpClient client)
