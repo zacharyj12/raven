@@ -44,7 +44,7 @@ namespace RavenLib
                     Headers.Remove("Content-Length");
             }
         }
-        public string Server = "Raven 1.0.0";
+        private string Server = "Raven 1.0.0";
 
         public HttpResponse(string? body, int statusCode)
         {
