@@ -116,7 +116,6 @@ namespace RavenLib
         public static string ReadFile(string clientPath, string webDirectory = "web")
         {
             var fullPath = Path.Combine(webDirectory, clientPath);
-            var fileContents = string.Empty;
             if (!File.Exists(fullPath))
             {
                 throw new FileNotFoundException($"File {fullPath} does not exist.");
