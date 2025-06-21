@@ -3,7 +3,7 @@ using RavenLib;
 try
 {
     var port = args.Length > 0 && int.TryParse(args[0], out var p) ? p : 8080;
-    var server = new Server(port);
+    var server = new RavenLib.Http.Server(port);
 
     Console.WriteLine($"Starting Raven Web Server on port {port}...");
     server.Start();

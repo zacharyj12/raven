@@ -1,10 +1,35 @@
 ﻿using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
 
 namespace RavenLib
 {
+    public class Logging
+    {
+        public string? loggingPath;
+        private static readonly SemaphoreSlim LogSemaphore = new(1, 1);
+        public Logging(string? loggingPath = "logs.txt")
+        {
+            this.loggingPath = loggingPath;
+        }
+        private string GetLogText(string message)
+        {
+            return $"{DateTime.Now}: {message}\n";
+        }
+        public async Task CreateLogAsync(string message)
+        {
+            await LogSemaphore.WaitAsync();
+            try
+            {
+                await File.AppendAllTextAsync(loggingPath ?? "logs.txt", GetLogText(message));
+            }
+            finally
+            {
+                LogSemaphore.Release();
+            }
+        }
+    }
+
     public class HttpResponse : Http
     {
         public string? Body { get; set; }
@@ -18,6 +43,7 @@ namespace RavenLib
                     200 => "OK",
                     404 => "Not Found",
                     500 => "Internal Server Error",
+                    400 => "Bad Request",
                     _ => "Unknown Status"
                 };
             }
@@ -89,171 +115,191 @@ namespace RavenLib
         // Function to read from a file, from a client path.  
         public static string ReadFile(string clientPath, string webDirectory = "web")
         {
-            try
+            var fullPath = Path.Combine(webDirectory, clientPath);
+            var fileContents = string.Empty;
+            if (!File.Exists(fullPath))
             {
-                var fullPath = Path.Combine(webDirectory, clientPath);
-                return System.IO.File.ReadAllText(fullPath);
+                throw new FileNotFoundException($"File {fullPath} does not exist.");
             }
-            catch (Exception ex)
+            var filecontents = File.ReadAllText(fullPath);
+            if (string.IsNullOrEmpty(filecontents))
             {
-                Console.WriteLine($"Error reading file {clientPath}: {ex.Message}");
-                return string.Empty;
+                throw new Exception($"File {fullPath} is empty.");
+            }
+            else
+            {
+                return filecontents;
             }
         }
-    }
 
-    public class Server : Http
-    {
-        int port;
-        string host;
-        TcpListener? listener;
-        public Server(int port, string host = "localhost")
+        public class Server : Http
         {
-            this.port = port;
-            this.host = host;
-        }
-        public void Start()
-        {
-            listener = new TcpListener(IPAddress.Any, port);
-            listener.Start();
-            Console.WriteLine($"Server started at {host}:{port}");
-            while (true)
+            int port;
+            string host;
+            string Webdirectory;
+            TcpListener? listener;
+            public Server(int port, string host = "localhost", string webdirectory = "web")
             {
+                this.port = port;
+                this.host = host;
+                this.Webdirectory = webdirectory;
+            }
+            public void Start()
+            {
+                listener = new TcpListener(IPAddress.Any, port);
+                listener.Start();
+                Console.WriteLine($"Server started at {host}:{port}");
+                int errorCount = 0;
+                while (true)
+                {
+                   var client = listener.AcceptTcpClient();
+                   ThreadPool.QueueUserWorkItem(_ => HandleClient(client));
+                }
+            }
+            private void HandleClient(TcpClient client)
+            {
+                using var stream = client.GetStream();
+                var buffer = new byte[4096];
+                int bytesRead = stream.Read(buffer, 0, buffer.Length);
+                string requestText = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                int StatusCode = 200;
+                var logger = new Logging();
+                Console.WriteLine($"Received request: {requestText}");
+
+                string path = "index.html";
+                var parts = requestText.Split(' ');
+                if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]))
+                {
+                    path = parts[1].TrimStart('/');
+                    if (string.IsNullOrEmpty(path))
+                        path = "index.html";
+                }
+                else
+                {
+                    StatusCode = 400;
+                    var response = new HttpResponse("<h1>400 Bad Request</h1>", StatusCode);
+                    response.ContentType = "text/html";
+                    response.ContentLength = response.Body?.Length;
+                    var responseBytes = response.ToBytes();
+                    stream.Write(responseBytes, 0, responseBytes.Length);
+                    logger.CreateLogAsync($"400 Bad Request: Malformed request").Wait();
+                    client.Close();
+                    return;
+                }
+
+                string fileContent;
                 try
                 {
-                    var client = listener.AcceptTcpClient();
-                    ThreadPool.QueueUserWorkItem(_ => HandleClient(client));
-                } catch (Exception ex) { Console.WriteLine(ex.ToString()); return; }
-               
+                    fileContent = ReadFile(path, Webdirectory);
+                    logger.CreateLogAsync($"200 OK: {path}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error reading file {path}: {ex.Message}");
+                    StatusCode = 404;
+                    fileContent = "<h1>404 Not Found</h1>";
+                    logger.CreateLogAsync($"404 Not Found: {path}").Wait();
+                }
+                var resp = new HttpResponse(fileContent, StatusCode);
+                resp.ContentType = MimeTypes.GetMimeType(path);
+                resp.ContentLength = resp.Body?.Length;
+                byte[] respBytes = resp.ToBytes();
+                stream.Write(respBytes, 0, respBytes.Length);
+                client.Close();
             }
         }
-        private void HandleClient(TcpClient client)
-        {
-            using var stream = client.GetStream();
-            var buffer = new byte[4096];
-            int bytesRead = stream.Read(buffer, 0, buffer.Length);
-            string requestText = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-            int StatusCode = 200;
-            // Get client info. string path  
-            Console.WriteLine($"Received request: {requestText}");
-            // ReadFile() from the request, and get the file.  
-            string path = requestText.Split(' ')[1].TrimStart('/');
-            if (string.IsNullOrEmpty(path))
-            {
-                path = "index.html"; // Default file  
-            }
-            string fileContent;
-            try
-            {
-                fileContent = ReadFile(path);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error reading file {path}: {ex.Message}");
-                StatusCode = 404;
-                fileContent = "<h1>404 Not Found</h1>";
-            }
-            var response = new HttpResponse(fileContent, StatusCode);
 
-            response.ContentType = MimeTypes.GetMimeType(path);
-            response.ContentLength = response.Body?.Length;
-
-            byte[] responseBytes = response.ToBytes();
-            stream.Write(responseBytes, 0, responseBytes.Length);
-            client.Close();
-        }
-    }
-
-    public class MimeTypes : Http
-    {
-        string? path;
-        public MimeTypes(string path)
+        public class MimeTypes : Http
         {
-            this.path = path;
-        }
-        static public string GetMimeType(string filePath)
-        {
-            string mimeType = "text/plain";
-            string extension = System.IO.Path.GetExtension(filePath).ToLowerInvariant();
-            switch (extension)
+            string? path;
+            public MimeTypes(string path)
             {
-                case ".aac": mimeType = "audio/aac"; break;
-                case ".abw": mimeType = "application/x-abiword"; break;
-                case ".apng": mimeType = "image/apng"; break;
-                case ".arc": mimeType = "application/x-freearc"; break;
-                case ".avif": mimeType = "image/avif"; break;
-                case ".avi": mimeType = "video/x-msvideo"; break;
-                case ".azw": mimeType = "application/vnd.amazon.ebook"; break;
-                case ".bin": mimeType = "application/octet-stream"; break;
-                case ".bmp": mimeType = "image/bmp"; break;
-                case ".bz": mimeType = "application/x-bzip"; break;
-                case ".bz2": mimeType = "application/x-bzip2"; break;
-                case ".cda": mimeType = "application/x-cdf"; break;
-                case ".csh": mimeType = "application/x-csh"; break;
-                case ".css": mimeType = "text/css"; break;
-                case ".csv": mimeType = "text/csv"; break;
-                case ".doc": mimeType = "application/msword"; break;
-                case ".docx": mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"; break;
-                case ".eot": mimeType = "application/vnd.ms-fontobject"; break;
-                case ".epub": mimeType = "application/epub+zip"; break;
-                case ".gz": mimeType = "application/gzip"; break;
-                case ".gif": mimeType = "image/gif"; break;
-                case ".htm": case ".html": mimeType = "text/html"; break;
-                case ".ico": mimeType = "image/vnd.microsoft.icon"; break;
-                case ".ics": mimeType = "text/calendar"; break;
-                case ".jar": mimeType = "application/java-archive"; break;
-                case ".jpeg": case ".jpg": mimeType = "image/jpeg"; break;
-                case ".js": mimeType = "text/javascript"; break;
-                case ".json": mimeType = "application/json"; break;
-                case ".jsonld": mimeType = "application/ld+json"; break;
-                case ".md": mimeType = "text/markdown"; break;
-                case ".mid": case ".midi": mimeType = "audio/midi"; break;
-                case ".mjs": mimeType = "text/javascript"; break;
-                case ".mp3": mimeType = "audio/mpeg"; break;
-                case ".mp4": mimeType = "video/mp4"; break;
-                case ".mpeg": mimeType = "video/mpeg"; break;
-                case ".mpkg": mimeType = "application/vnd.apple.installer+xml"; break;
-                case ".odp": mimeType = "application/vnd.oasis.opendocument.presentation"; break;
-                case ".ods": mimeType = "application/vnd.oasis.opendocument.spreadsheet"; break;
-                case ".odt": mimeType = "application/vnd.oasis.opendocument.text"; break;
-                case ".oga": mimeType = "audio/ogg"; break;
-                case ".ogv": mimeType = "video/ogg"; break;
-                case ".ogx": mimeType = "application/ogg"; break;
-                case ".opus": mimeType = "audio/ogg"; break;
-                case ".otf": mimeType = "font/otf"; break;
-                case ".png": mimeType = "image/png"; break;
-                case ".pdf": mimeType = "application/pdf"; break;
-                case ".php": mimeType = "application/x-httpd-php"; break;
-                case ".ppt": mimeType = "application/vnd.ms-powerpoint"; break;
-                case ".pptx": mimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"; break;
-                case ".rar": mimeType = "application/vnd.rar"; break;
-                case ".rtf": mimeType = "application/rtf"; break;
-                case ".sh": mimeType = "application/x-sh"; break;
-                case ".svg": mimeType = "image/svg+xml"; break;
-                case ".tar": mimeType = "application/x-tar"; break;
-                case ".tif": case ".tiff": mimeType = "image/tiff"; break;
-                case ".ts": mimeType = "video/mp2t"; break;
-                case ".ttf": mimeType = "font/ttf"; break;
-                case ".txt": mimeType = "text/plain"; break;
-                case ".vsd": mimeType = "application/vnd.visio"; break;
-                case ".wav": mimeType = "audio/wav"; break;
-                case ".weba": mimeType = "audio/webm"; break;
-                case ".webm": mimeType = "video/webm"; break;
-                case ".webmanifest": mimeType = "application/manifest+json"; break;
-                case ".webp": mimeType = "image/webp"; break;
-                case ".woff": mimeType = "font/woff"; break;
-                case ".woff2": mimeType = "font/woff2"; break;
-                case ".xhtml": mimeType = "application/xhtml+xml"; break;
-                case ".xls": mimeType = "application/vnd.ms-excel"; break;
-                case ".xlsx": mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"; break;
-                case ".xml": mimeType = "application/xml"; break;
-                case ".xul": mimeType = "application/vnd.mozilla.xul+xml"; break;
-                case ".zip": mimeType = "application/zip"; break;
-                case ".3gp": mimeType = "video/3gpp"; break;
-                case ".3g2": mimeType = "video/3gpp2"; break;
-                case ".7z": mimeType = "application/x-7z-compressed"; break;
+                this.path = path;
             }
-            return mimeType;
+            static public string GetMimeType(string filePath)
+            {
+                string mimeType = "text/plain";
+                string extension = System.IO.Path.GetExtension(filePath).ToLowerInvariant();
+                switch (extension)
+                {
+                    case ".aac": mimeType = "audio/aac"; break;
+                    case ".abw": mimeType = "application/x-abiword"; break;
+                    case ".apng": mimeType = "image/apng"; break;
+                    case ".arc": mimeType = "application/x-freearc"; break;
+                    case ".avif": mimeType = "image/avif"; break;
+                    case ".avi": mimeType = "video/x-msvideo"; break;
+                    case ".azw": mimeType = "application/vnd.amazon.ebook"; break;
+                    case ".bin": mimeType = "application/octet-stream"; break;
+                    case ".bmp": mimeType = "image/bmp"; break;
+                    case ".bz": mimeType = "application/x-bzip"; break;
+                    case ".bz2": mimeType = "application/x-bzip2"; break;
+                    case ".cda": mimeType = "application/x-cdf"; break;
+                    case ".csh": mimeType = "application/x-csh"; break;
+                    case ".css": mimeType = "text/css"; break;
+                    case ".csv": mimeType = "text/csv"; break;
+                    case ".doc": mimeType = "application/msword"; break;
+                    case ".docx": mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"; break;
+                    case ".eot": mimeType = "application/vnd.ms-fontobject"; break;
+                    case ".epub": mimeType = "application/epub+zip"; break;
+                    case ".gz": mimeType = "application/gzip"; break;
+                    case ".gif": mimeType = "image/gif"; break;
+                    case ".htm": case ".html": mimeType = "text/html"; break;
+                    case ".ico": mimeType = "image/vnd.microsoft.icon"; break;
+                    case ".ics": mimeType = "text/calendar"; break;
+                    case ".jar": mimeType = "application/java-archive"; break;
+                    case ".jpeg": case ".jpg": mimeType = "image/jpeg"; break;
+                    case ".js": mimeType = "text/javascript"; break;
+                    case ".json": mimeType = "application/json"; break;
+                    case ".jsonld": mimeType = "application/ld+json"; break;
+                    case ".md": mimeType = "text/markdown"; break;
+                    case ".mid": case ".midi": mimeType = "audio/midi"; break;
+                    case ".mjs": mimeType = "text/javascript"; break;
+                    case ".mp3": mimeType = "audio/mpeg"; break;
+                    case ".mp4": mimeType = "video/mp4"; break;
+                    case ".mpeg": mimeType = "video/mpeg"; break;
+                    case ".mpkg": mimeType = "application/vnd.apple.installer+xml"; break;
+                    case ".odp": mimeType = "application/vnd.oasis.opendocument.presentation"; break;
+                    case ".ods": mimeType = "application/vnd.oasis.opendocument.spreadsheet"; break;
+                    case ".odt": mimeType = "application/vnd.oasis.opendocument.text"; break;
+                    case ".oga": mimeType = "audio/ogg"; break;
+                    case ".ogv": mimeType = "video/ogg"; break;
+                    case ".ogx": mimeType = "application/ogg"; break;
+                    case ".opus": mimeType = "audio/ogg"; break;
+                    case ".otf": mimeType = "font/otf"; break;
+                    case ".png": mimeType = "image/png"; break;
+                    case ".pdf": mimeType = "application/pdf"; break;
+                    case ".php": mimeType = "application/x-httpd-php"; break;
+                    case ".ppt": mimeType = "application/vnd.ms-powerpoint"; break;
+                    case ".pptx": mimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"; break;
+                    case ".rar": mimeType = "application/vnd.rar"; break;
+                    case ".rtf": mimeType = "application/rtf"; break;
+                    case ".sh": mimeType = "application/x-sh"; break;
+                    case ".svg": mimeType = "image/svg+xml"; break;
+                    case ".tar": mimeType = "application/x-tar"; break;
+                    case ".tif": case ".tiff": mimeType = "image/tiff"; break;
+                    case ".ts": mimeType = "video/mp2t"; break;
+                    case ".ttf": mimeType = "font/ttf"; break;
+                    case ".txt": mimeType = "text/plain"; break;
+                    case ".vsd": mimeType = "application/vnd.visio"; break;
+                    case ".wav": mimeType = "audio/wav"; break;
+                    case ".weba": mimeType = "audio/webm"; break;
+                    case ".webm": mimeType = "video/webm"; break;
+                    case ".webmanifest": mimeType = "application/manifest+json"; break;
+                    case ".webp": mimeType = "image/webp"; break;
+                    case ".woff": mimeType = "font/woff"; break;
+                    case ".woff2": mimeType = "font/woff2"; break;
+                    case ".xhtml": mimeType = "application/xhtml+xml"; break;
+                    case ".xls": mimeType = "application/vnd.ms-excel"; break;
+                    case ".xlsx": mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"; break;
+                    case ".xml": mimeType = "application/xml"; break;
+                    case ".xul": mimeType = "application/vnd.mozilla.xul+xml"; break;
+                    case ".zip": mimeType = "application/zip"; break;
+                    case ".3gp": mimeType = "video/3gpp"; break;
+                    case ".3g2": mimeType = "video/3gpp2"; break;
+                    case ".7z": mimeType = "application/x-7z-compressed"; break;
+                }
+                return mimeType;
+            }
         }
     }
 }
