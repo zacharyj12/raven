@@ -139,16 +139,25 @@ namespace RavenLib
                 this.host = host;
                 this.webDirectory = webDirectory;
             }
-            public void Start()
+            public void Start(CancellationToken cancellationToken)
             {
                 listener = new TcpListener(IPAddress.Any, port);
                 listener.Start();
                 Console.WriteLine($"Server started at {host}:{port}");
-                while (true)
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                   var client = listener.AcceptTcpClient();
-                   ThreadPool.QueueUserWorkItem(_ => HandleClient(client));
+                    if (listener.Pending())
+                    {
+                        var client = listener.AcceptTcpClient();
+                        ThreadPool.QueueUserWorkItem(_ => HandleClient(client));
+                    }
+                    else
+                    {
+                        Thread.Sleep(100); // Avoid busy waiting
+                    }
                 }
+                listener.Stop();
+                Console.WriteLine("Server stopped.");
             }
             private void HandleClient(TcpClient client)
             {
