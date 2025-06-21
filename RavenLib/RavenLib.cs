@@ -6,11 +6,11 @@ namespace RavenLib
 {
     public class Logging
     {
-        public string? loggingPath;
+        public string? LoggingPath;
         private static readonly SemaphoreSlim LogSemaphore = new(1, 1);
         public Logging(string? loggingPath = "logs.txt")
         {
-            this.loggingPath = loggingPath;
+            LoggingPath = loggingPath;
         }
         private string GetLogText(string message)
         {
@@ -21,7 +21,7 @@ namespace RavenLib
             await LogSemaphore.WaitAsync();
             try
             {
-                await File.AppendAllTextAsync(loggingPath ?? "logs.txt", GetLogText(message));
+                await File.AppendAllTextAsync(LoggingPath ?? "logs.txt", GetLogText(message));
             }
             finally
             {
@@ -85,10 +85,8 @@ namespace RavenLib
             if (headers != null)
                 Headers = new Dictionary<string, string>(headers);
         }
-        // method to convert the response to a string representation
         public override string ToString()
         {
-            // Ensure Server header is always present
             Headers["Server"] = Server;
             var response = $"HTTP/1.1 {StatusCode} {ReasonPhrase}\r\n";
             foreach (var header in Headers)
@@ -102,7 +100,6 @@ namespace RavenLib
             }
             return response;
         }
-        // method to convert the reesponse to a byte array, for sockets.
         public byte[] ToBytes()
         {
             return System.Text.Encoding.UTF8.GetBytes(ToString());
@@ -112,7 +109,6 @@ namespace RavenLib
 
     public class Http
     {
-        // Function to read from a file, from a client path.  
         public static string ReadFile(string clientPath, string webDirectory = "web")
         {
             var fullPath = Path.Combine(webDirectory, clientPath);
@@ -120,14 +116,14 @@ namespace RavenLib
             {
                 throw new FileNotFoundException($"File {fullPath} does not exist.");
             }
-            var filecontents = File.ReadAllText(fullPath);
-            if (string.IsNullOrEmpty(filecontents))
+            var fileContents = File.ReadAllText(fullPath);
+            if (string.IsNullOrEmpty(fileContents))
             {
                 throw new Exception($"File {fullPath} is empty.");
             }
             else
             {
-                return filecontents;
+                return fileContents;
             }
         }
 
@@ -135,20 +131,19 @@ namespace RavenLib
         {
             int port;
             string host;
-            string Webdirectory;
+            string webDirectory;
             TcpListener? listener;
-            public Server(int port, string host = "localhost", string webdirectory = "web")
+            public Server(int port, string host = "localhost", string webDirectory = "web")
             {
                 this.port = port;
                 this.host = host;
-                this.Webdirectory = webdirectory;
+                this.webDirectory = webDirectory;
             }
             public void Start()
             {
                 listener = new TcpListener(IPAddress.Any, port);
                 listener.Start();
                 Console.WriteLine($"Server started at {host}:{port}");
-                int errorCount = 0;
                 while (true)
                 {
                    var client = listener.AcceptTcpClient();
@@ -161,7 +156,7 @@ namespace RavenLib
                 var buffer = new byte[4096];
                 int bytesRead = stream.Read(buffer, 0, buffer.Length);
                 string requestText = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                int StatusCode = 200;
+                int statusCode = 200;
                 var logger = new Logging();
                 Console.WriteLine($"Received request: {requestText}");
 
@@ -175,8 +170,8 @@ namespace RavenLib
                 }
                 else
                 {
-                    StatusCode = 400;
-                    var response = new HttpResponse("<h1>400 Bad Request</h1>", StatusCode);
+                    statusCode = 400;
+                    var response = new HttpResponse("<h1>400 Bad Request</h1>", statusCode);
                     response.ContentType = "text/html";
                     response.ContentLength = response.Body?.Length;
                     var responseBytes = response.ToBytes();
@@ -189,17 +184,17 @@ namespace RavenLib
                 string fileContent;
                 try
                 {
-                    fileContent = ReadFile(path, Webdirectory);
+                    fileContent = ReadFile(path, webDirectory);
                     logger.CreateLogAsync($"200 OK: {path}");
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error reading file {path}: {ex.Message}");
-                    StatusCode = 404;
+                    statusCode = 404;
                     fileContent = "<h1>404 Not Found</h1>";
                     logger.CreateLogAsync($"404 Not Found: {path}").Wait();
                 }
-                var resp = new HttpResponse(fileContent, StatusCode);
+                var resp = new HttpResponse(fileContent, statusCode);
                 resp.ContentType = MimeTypes.GetMimeType(path);
                 resp.ContentLength = resp.Body?.Length;
                 byte[] respBytes = resp.ToBytes();
