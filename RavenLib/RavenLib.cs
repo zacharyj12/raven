@@ -12,7 +12,7 @@ namespace RavenLib
         {
             LoggingPath = loggingPath;
         }
-        private string GetLogText(string message)
+        static private string GetLogText(string message)
         {
             return $"{DateTime.Now}: {message}\n";
         }
@@ -119,7 +119,7 @@ namespace RavenLib
             var fileContents = File.ReadAllText(fullPath);
             if (string.IsNullOrEmpty(fileContents))
             {
-                throw new Exception($"File {fullPath} is empty.");
+                throw new InvalidDataException($"File {fullPath} is empty.");
             }
             else
             {
@@ -131,13 +131,12 @@ namespace RavenLib
         {
             int port;
             string host;
-            string webDirectory;
+            string webDirectory = "Web";
             TcpListener? listener;
-            public Server(int port, string host = "localhost", string webDirectory = "web")
+            public Server(int port, string host = "localhost")
             {
                 this.port = port;
                 this.host = host;
-                this.webDirectory = webDirectory;
             }
             public void Start(CancellationToken cancellationToken)
             {
@@ -168,11 +167,10 @@ namespace RavenLib
                 int statusCode = 200;
                 var logger = new Logging();
                 Console.WriteLine($"Received request: {requestText}");
-
-                string path = "index.html";
                 var parts = requestText.Split(' ');
                 if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]))
                 {
+                    string path;
                     path = parts[1].TrimStart('/');
                     if (string.IsNullOrEmpty(path))
                         path = "index.html";
