@@ -71,7 +71,7 @@ namespace RavenLib
                     Headers.Remove("Content-Length");
             }
         }
-        private const string Server = "Raven 1.0.0";
+        private readonly string Server = "Raven 1.0.0";
 
         public HttpResponse(string? body, int statusCode)
         {
@@ -168,9 +168,9 @@ namespace RavenLib
                 var logger = new Logging();
                 Console.WriteLine($"Received request: {requestText}");
                 var parts = requestText.Split(' ');
+                string path;
                 if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]))
                 {
-                    string path;
                     path = parts[1].TrimStart('/');
                     if (string.IsNullOrEmpty(path))
                         path = "index.html";

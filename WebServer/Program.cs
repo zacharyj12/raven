@@ -1,22 +1,19 @@
 using RavenLib;
+using System.Threading;
 
+var cts = new CancellationTokenSource();
 try
 {
     var port = args.Length > 0 && int.TryParse(args[0], out var p) ? p : 8080;
     var server = new RavenLib.Http.Server(port);
-
     Console.WriteLine($"Starting Raven Web Server on port {port}...");
-    server.Start();
-    Console.WriteLine("Server started successfully. Press Ctrl+C to stop.");
-
-    // Keep the application running until Ctrl+C
     Console.CancelKeyPress += (_, _) =>
     {
         Console.WriteLine("\nShutting down server...");
-        Environment.Exit(0);
+        cts.Cancel();
     };
-
-    Thread.Sleep(Timeout.Infinite);
+    server.Start(cts.Token);
+    Console.WriteLine("Server stopped. Press any key to exit.");
 }
 catch (Exception ex)
 {
