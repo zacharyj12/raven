@@ -71,7 +71,7 @@ namespace RavenLib
                     Headers.Remove("Content-Length");
             }
         }
-        private readonly string Server = "Raven 1.0.0";
+        private readonly string Server = "Raven 1.2.0";
 
         public HttpResponse(string? body, int statusCode)
         {
