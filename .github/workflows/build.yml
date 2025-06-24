@@ -7,10 +7,9 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
         rid: [ win-x86, win-x64, linux-x86, linux-x64 ]
     steps:
       - name: Checkout Repository
@@ -24,13 +23,11 @@ jobs:
       - name: Publish Application
         run: |
           cd WebServer
-          dotnet publish -c Release \
-            -r ${{ matrix.rid }} \
-            --self-contained true \
-            /p:PublishTrimmed=true \
+          dotnet publish -c Release -r ${{ matrix.rid }} --self-contained true \
             /p:PublishSingleFile=true \
-            /p:IncludeNativeLibrariesForSelfExtract=true \
-            /p:EnableCompressionInSingleFile=true \
+            /p:PublishTrimmed=true \
+            /p:DebugType=None \
+            /p:DebugSymbols=false \
             --output ../publish/${{ matrix.rid }}
 
       - name: Set up Web Directory
@@ -40,11 +37,13 @@ jobs:
 
       - name: Create Release ZIP
         run: |
-          zip -r ./${{ matrix.rid }}.zip ./publish/${{ matrix.rid }}
+          cd ./publish/${{ matrix.rid }}
+          zip -r ../../${{ matrix.rid }}.zip *
+          cd ../../..
 
   release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
