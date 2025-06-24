@@ -1,0 +1,82 @@
+﻿name: Build and Release Workflow
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        arch: [ x86, x64 ]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '9.x'
+
+      - name: Publish Application
+        run: |
+          dotnet publish Program.csproj -c Release \
+            -r ${{ matrix.os }}-${{ matrix.arch }} \
+            --self-contained true \
+            /p:PublishTrimmed=true \
+            /p:PublishSingleFile=true \
+            /p:IncludeNativeLibrariesForSelfExtract=true \
+            /p:EnableCompressionInSingleFile=true \
+            --output ./publish/
+
+      - name: Set up Web Directory
+        run: |
+          mkdir -p ./publish/web
+          echo "<h1>Hello, World!</h1>" > ./publish/web/index.html
+
+      - name: Create Release ZIP
+        run: |
+          cd ./publish
+          zip -r ../${{ matrix.os }}-${{ matrix.arch }}.zip *
+          cd ..
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Get Latest Release
+        id: get_latest
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: latestRelease } = await github.rest.repos.getLatestRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            core.setOutput("tag", latestRelease.tag_name);
+            core.setOutput("version", latestRelease.tag_name.replace(/^v/, ''));
+
+      - name: Generate Release Version
+        id: release_version
+        run: |
+          echo "version=${{ steps.get_latest.outputs.version }}-dev-${GITHUB_SHA::7}" >> $GITHUB_ENV
+          echo "release_name=Release ${{ steps.get_latest.outputs.version }}-dev-${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: |
+            ubuntu-latest-x86.zip
+            ubuntu-latest-x64.zip
+            windows-latest-x86.zip
+            windows-latest-x64.zip
+          tag: ${{ env.version }}
+          name: ${{ env.release_name }}
+          draft: false
+          prerelease: true
