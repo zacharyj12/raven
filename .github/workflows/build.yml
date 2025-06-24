@@ -23,14 +23,15 @@ jobs:
 
       - name: Publish Application
         run: |
-          dotnet publish Program.csproj -c Release \
+          cd WebServer
+          dotnet publish -c Release \
             -r ${{ matrix.os }}-${{ matrix.arch }} \
             --self-contained true \
             /p:PublishTrimmed=true \
             /p:PublishSingleFile=true \
             /p:IncludeNativeLibrariesForSelfExtract=true \
             /p:EnableCompressionInSingleFile=true \
-            --output ./publish/
+            --output ../publish
 
       - name: Set up Web Directory
         run: |

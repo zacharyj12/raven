@@ -6,13 +6,13 @@ namespace RavenLib
 {
     public class Logging
     {
-        public string? LoggingPath;
+        public string? loggingPath;
         private static readonly SemaphoreSlim LogSemaphore = new(1, 1);
         public Logging(string? loggingPath = "logs.txt")
         {
-            LoggingPath = loggingPath;
+            this.loggingPath = loggingPath;
         }
-        static private string GetLogText(string message)
+        private string GetLogText(string message)
         {
             return $"{DateTime.Now}: {message}\n";
         }
@@ -21,7 +21,7 @@ namespace RavenLib
             await LogSemaphore.WaitAsync();
             try
             {
-                await File.AppendAllTextAsync(LoggingPath ?? "logs.txt", GetLogText(message));
+                await File.AppendAllTextAsync(loggingPath ?? "logs.txt", GetLogText(message));
             }
             finally
             {
@@ -71,7 +71,7 @@ namespace RavenLib
                     Headers.Remove("Content-Length");
             }
         }
-        private readonly string Server = "Raven 1.2.0";
+        private const string Server = "Raven 1.0.0";
 
         public HttpResponse(string? body, int statusCode)
         {
@@ -85,8 +85,10 @@ namespace RavenLib
             if (headers != null)
                 Headers = new Dictionary<string, string>(headers);
         }
+        // method to convert the response to a string representation
         public override string ToString()
         {
+            // Ensure Server header is always present
             Headers["Server"] = Server;
             var response = $"HTTP/1.1 {StatusCode} {ReasonPhrase}\r\n";
             foreach (var header in Headers)
@@ -100,30 +102,32 @@ namespace RavenLib
             }
             return response;
         }
+        // method to convert the reesponse to a byte array, for sockets.
         public byte[] ToBytes()
         {
-            return System.Text.Encoding.UTF8.GetBytes(ToString());
+            return Encoding.UTF8.GetBytes(ToString());
         }
 
     }
 
     public class Http
     {
-        public static string ReadFile(string clientPath, string webDirectory = "web")
+        // Function to read from a file, from a client Path.  
+        public static string ReadFile(string ClientPath, string WebDirectory = "web")
         {
-            var fullPath = Path.Combine(webDirectory, clientPath);
-            if (!File.Exists(fullPath))
+            var FullPath = Path.Combine(WebDirectory, ClientPath);
+            if (!File.Exists(FullPath))
             {
-                throw new FileNotFoundException($"File {fullPath} does not exist.");
+                throw new FileNotFoundException($"File {FullPath} does not exist.");
             }
-            var fileContents = File.ReadAllText(fullPath);
-            if (string.IsNullOrEmpty(fileContents))
+            var FileContents = File.ReadAllText(FullPath);
+            if (string.IsNullOrEmpty(FileContents))
             {
-                throw new InvalidDataException($"File {fullPath} is empty.");
+                throw new Exception($"File {FullPath} is empty.");
             }
             else
             {
-                return fileContents;
+                return FileContents;
             }
         }
 
@@ -131,32 +135,25 @@ namespace RavenLib
         {
             int port;
             string host;
-            string webDirectory = "Web";
+            string Webdirectory;
             TcpListener? listener;
-            public Server(int port, string host = "localhost")
+            public Server(int port, string host = "localhost", string webdirectory = "web")
             {
                 this.port = port;
                 this.host = host;
+                this.Webdirectory = webdirectory;
             }
-            public void Start(CancellationToken cancellationToken)
+            public void Start()
             {
                 listener = new TcpListener(IPAddress.Any, port);
                 listener.Start();
                 Console.WriteLine($"Server started at {host}:{port}");
-                while (!cancellationToken.IsCancellationRequested)
+                int errorCount = 0;
+                while (true)
                 {
-                    if (listener.Pending())
-                    {
-                        var client = listener.AcceptTcpClient();
-                        ThreadPool.QueueUserWorkItem(_ => HandleClient(client));
-                    }
-                    else
-                    {
-                        Thread.Sleep(100); // Avoid busy waiting
-                    }
+                    var client = listener.AcceptTcpClient();
+                    ThreadPool.QueueUserWorkItem(_ => HandleClient(client));
                 }
-                listener.Stop();
-                Console.WriteLine("Server stopped.");
             }
             private void HandleClient(TcpClient client)
             {
@@ -164,21 +161,22 @@ namespace RavenLib
                 var buffer = new byte[4096];
                 int bytesRead = stream.Read(buffer, 0, buffer.Length);
                 string requestText = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                int statusCode = 200;
+                int StatusCode = 200;
                 var logger = new Logging();
                 Console.WriteLine($"Received request: {requestText}");
+
+                string Path = "index.html";
                 var parts = requestText.Split(' ');
-                string path;
                 if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]))
                 {
-                    path = parts[1].TrimStart('/');
-                    if (string.IsNullOrEmpty(path))
-                        path = "index.html";
+                    Path = parts[1].TrimStart('/');
+                    if (string.IsNullOrEmpty(Path))
+                        Path = "index.html";
                 }
                 else
                 {
-                    statusCode = 400;
-                    var response = new HttpResponse("<h1>400 Bad Request</h1>", statusCode);
+                    StatusCode = 400;
+                    var response = new HttpResponse("<h1>400 Bad Request</h1>", StatusCode);
                     response.ContentType = "text/html";
                     response.ContentLength = response.Body?.Length;
                     var responseBytes = response.ToBytes();
@@ -191,18 +189,18 @@ namespace RavenLib
                 string fileContent;
                 try
                 {
-                    fileContent = ReadFile(path, webDirectory);
-                    logger.CreateLogAsync($"200 OK: {path}");
+                    fileContent = ReadFile(Path, Webdirectory);
+                    logger.CreateLogAsync($"200 OK: {Path}");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error reading file {path}: {ex.Message}");
-                    statusCode = 404;
+                    Console.WriteLine($"Error reading file {Path}: {ex.Message}");
+                    StatusCode = 404;
                     fileContent = "<h1>404 Not Found</h1>";
-                    logger.CreateLogAsync($"404 Not Found: {path}").Wait();
+                    logger.CreateLogAsync($"404 Not Found: {Path}").Wait();
                 }
-                var resp = new HttpResponse(fileContent, statusCode);
-                resp.ContentType = MimeTypes.GetMimeType(path);
+                var resp = new HttpResponse(fileContent, StatusCode);
+                resp.ContentType = MimeTypes.GetMimeType(Path);
                 resp.ContentLength = resp.Body?.Length;
                 byte[] respBytes = resp.ToBytes();
                 stream.Write(respBytes, 0, respBytes.Length);
@@ -212,10 +210,10 @@ namespace RavenLib
 
         public class MimeTypes : Http
         {
-            string? path;
-            public MimeTypes(string path)
+            string? Path;
+            public MimeTypes(string Path)
             {
-                this.path = path;
+                this.Path = Path;
             }
             static public string GetMimeType(string filePath)
             {
@@ -244,16 +242,19 @@ namespace RavenLib
                     case ".epub": mimeType = "application/epub+zip"; break;
                     case ".gz": mimeType = "application/gzip"; break;
                     case ".gif": mimeType = "image/gif"; break;
-                    case ".htm": case ".html": mimeType = "text/html"; break;
+                    case ".htm":
+                    case ".html": mimeType = "text/html"; break;
                     case ".ico": mimeType = "image/vnd.microsoft.icon"; break;
                     case ".ics": mimeType = "text/calendar"; break;
                     case ".jar": mimeType = "application/java-archive"; break;
-                    case ".jpeg": case ".jpg": mimeType = "image/jpeg"; break;
+                    case ".jpeg":
+                    case ".jpg": mimeType = "image/jpeg"; break;
                     case ".js": mimeType = "text/javascript"; break;
                     case ".json": mimeType = "application/json"; break;
                     case ".jsonld": mimeType = "application/ld+json"; break;
                     case ".md": mimeType = "text/markdown"; break;
-                    case ".mid": case ".midi": mimeType = "audio/midi"; break;
+                    case ".mid":
+                    case ".midi": mimeType = "audio/midi"; break;
                     case ".mjs": mimeType = "text/javascript"; break;
                     case ".mp3": mimeType = "audio/mpeg"; break;
                     case ".mp4": mimeType = "video/mp4"; break;
@@ -277,7 +278,8 @@ namespace RavenLib
                     case ".sh": mimeType = "application/x-sh"; break;
                     case ".svg": mimeType = "image/svg+xml"; break;
                     case ".tar": mimeType = "application/x-tar"; break;
-                    case ".tif": case ".tiff": mimeType = "image/tiff"; break;
+                    case ".tif":
+                    case ".tiff": mimeType = "image/tiff"; break;
                     case ".ts": mimeType = "video/mp2t"; break;
                     case ".ttf": mimeType = "font/ttf"; break;
                     case ".txt": mimeType = "text/plain"; break;
