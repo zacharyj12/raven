@@ -24,7 +24,7 @@ jobs:
         shell: cmd
         run: |
           cd WebServer
-          dotnet publish -c Release -r ${{ matrix.rid }} --self-contained true ^
+          dotnet publish -c Release -r ${{ matrix.rid }} --self-contained true ^ 
             /p:PublishSingleFile=true ^
             /p:PublishTrimmed=true ^
             /p:DebugType=None ^
@@ -64,8 +64,13 @@ jobs:
       - name: Generate Release Version
         id: release_version
         run: |
-          echo "version=${{ steps.get_latest.outputs.version }}-dev-${GITHUB_SHA::7}" >> $GITHUB_ENV
-          echo "release_name=Release ${{ steps.get_latest.outputs.version }}-dev-${GITHUB_SHA::7}" >> $GITHUB_ENV
+          echo "version=${{ steps.get_latest.outputs.version }}-dev-${GITHUB_SHA:0:7}" >> $GITHUB_ENV
+          echo "release_name=Release ${{ steps.get_latest.outputs.version }}-dev-${GITHUB_SHA:0:7}" >> $GITHUB_ENV
+
+      - name: Release Variables
+        run: |
+          echo "Version: ${{ env.version }}"
+          echo "Release Name: ${{ env.release_name }}"
 
       - name: Create GitHub Release
         uses: ncipollo/release-action@v1
@@ -73,7 +78,6 @@ jobs:
           artifacts: |
             win-x86.zip
             win-x64.zip
-            linux-x86.zip
             linux-x64.zip
           tag: ${{ env.version }}
           name: ${{ env.release_name }}
