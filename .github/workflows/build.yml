@@ -20,16 +20,14 @@ jobs:
         with:
           dotnet-version: '9.x'
 
+      - name: Prepare Publish Directory
+        run: mkdir -p publish
+
       - name: Publish Application
-        shell: cmd
+        shell: bash
         run: |
           cd WebServer
-          dotnet publish -c Release -r ${{ matrix.rid }} --self-contained true ^ 
-            /p:PublishSingleFile=true ^
-            /p:PublishTrimmed=true ^
-            /p:DebugType=None ^
-            /p:DebugSymbols=false ^
-            -o ../publish/${{ matrix.rid }}
+          dotnet publish -c Release -r ${{ matrix.rid }} --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true /p:DebugType=None /p:DebugSymbols=false -o ../publish/${{ matrix.rid }}
 
       - name: Set up Web Directory
         run: |
