@@ -10,7 +10,7 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        rid: [ win-x86, win-x64, linux-x86, linux-x64 ]
+        rid: [ win-x86, win-x64, linux-x64 ]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
