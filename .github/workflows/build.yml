@@ -26,13 +26,12 @@ jobs:
       - name: Publish Application
         shell: bash
         run: |
-          cd WebServer
-          dotnet publish -c Release -r ${{ matrix.rid }} --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true /p:DebugType=None /p:DebugSymbols=false -o ../publish/${{ matrix.rid }}
+          dotnet publish WebServer/WebServer.csproj -c Release -r ${{ matrix.rid }} --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true /p:DebugType=None /p:DebugSymbols=false -o publish/${{ matrix.rid }}
 
       - name: Set up Web Directory
         run: |
           mkdir ./publish/${{ matrix.rid }}/web
-          echo "<h1>Hello, World!</h1>" > ./publish/${{ matrix.rid }}/web/index.html
+          echo "<h1>Hello, World, from Raven!</h1>" > ./publish/${{ matrix.rid }}/web/index.html
 
       - name: Create Release ZIP
         run: |
