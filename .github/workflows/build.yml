@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rid: [ win-x86, win-x64, linux-x64 ]
+        rid: [win-x86, win-x64, linux-x64]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
@@ -53,13 +53,10 @@ jobs:
           cd ../..
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: published-zips
-          path: |
-            win-x86.zip
-            win-x64.zip
-            linux-x64.zip
+          name: published-zips-${{ matrix.rid }}
+          path: ${{ matrix.rid }}.zip
 
   release:
     needs: build
@@ -68,10 +65,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v3
+      - name: Download All Build Artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: published-zips
+          pattern: published-zips-*
+          merge-multiple: true
           path: .
 
       - name: Get Latest Release
