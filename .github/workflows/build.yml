@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         rid: [ win-x86, win-x64, linux-x64 ]
@@ -20,37 +20,38 @@ jobs:
         with:
           dotnet-version: '9.x'
 
+      - name: Install zip tool
+        run: sudo apt-get update && sudo apt-get install -y zip
+
       - name: Prepare Publish Directory
-        shell: bash
         run: mkdir -p publish
 
       - name: Publish Application
-        shell: bash
         run: |
           dotnet publish WebServer/WebServer.csproj \
             -c Release \
             -r ${{ matrix.rid }} \
-            /p:SelfContained=true \
-            /p:PublishSingleFile=true \
-            /p:PublishTrimmed=true \
-            /p:DebugType=None \
-            /p:DebugSymbols=false \
+            "/p:SelfContained=true" \
+            "/p:PublishSingleFile=true" \
+            "/p:PublishTrimmed=true" \
+            "/p:DebugType=None" \
+            "/p:DebugSymbols=false" \
             -o publish/${{ matrix.rid }}
 
       - name: Set up Web Directory
-        shell: bash
         run: |
           mkdir -p ./publish/${{ matrix.rid }}/web
           echo "<h1>Hello, World, from Raven!</h1>" > ./publish/${{ matrix.rid }}/web/index.html
 
       - name: Create Release ZIP
-        shell: powershell
         run: |
-          Compress-Archive -Path "publish/${{ matrix.rid }}/*" -DestinationPath "${{ matrix.rid }}.zip"
+          cd publish/${{ matrix.rid }}
+          zip -r ../../${{ matrix.rid }}.zip .
+          cd ../..
 
   release:
     needs: build
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
@@ -69,13 +70,11 @@ jobs:
 
       - name: Generate Release Version
         id: release_version
-        shell: bash
         run: |
           echo "version=${{ steps.get_latest.outputs.version }}-dev-${GITHUB_SHA:0:7}" >> $GITHUB_ENV
           echo "release_name=Release ${{ steps.get_latest.outputs.version }}-dev-${GITHUB_SHA:0:7}" >> $GITHUB_ENV
 
       - name: Release Variables
-        shell: bash
         run: |
           echo "Version: ${{ env.version }}"
           echo "Release Name: ${{ env.release_name }}"
