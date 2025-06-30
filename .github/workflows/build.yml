@@ -26,8 +26,7 @@ jobs:
       - name: Publish Application
         shell: bash
         run: |
-          cd WebServer
-          dotnet publish -c Release -r ${{ matrix.rid }} --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true /p:DebugType=None /p:DebugSymbols=false -o ../publish/${{ matrix.rid }}
+          dotnet publish WebServer/WebServer.csproj -c Release -r ${{ matrix.rid }} --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true /p:DebugType=None /p:DebugSymbols=false -o publish/${{ matrix.rid }}
 
       - name: Set up Web Directory
         run: |
