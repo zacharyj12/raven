@@ -32,7 +32,7 @@ jobs:
       - name: Set up Web Directory
         run: |
           mkdir ./publish/${{ matrix.rid }}/web
-          echo "<h1>Hello, World!</h1>" > ./publish/${{ matrix.rid }}/web/index.html
+          echo "<h1>Hello, World, from Raven!</h1>" > ./publish/${{ matrix.rid }}/web/index.html
 
       - name: Create Release ZIP
         run: |
