@@ -52,12 +52,27 @@ jobs:
           zip -r ../../${{ matrix.rid }}.zip .
           cd ../..
 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: published-zips
+          path: |
+            win-x86.zip
+            win-x64.zip
+            linux-x64.zip
+
   release:
     needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: published-zips
+          path: .
 
       - name: Get Latest Release
         id: get_latest
@@ -74,8 +89,8 @@ jobs:
       - name: Generate Release Version
         id: release_version
         run: |
-          echo "version=${{ steps.get_latest.outputs.version }}-dev-${GITHUB_SHA:0:7}" >> $GITHUB_ENV
-          echo "release_name=Release ${{ steps.get_latest.outputs.version }}-dev-${GITHUB_SHA:0:7}" >> $GITHUB_ENV
+          echo "version=v${{ steps.get_latest.outputs.version }}-dev-${GITHUB_SHA:0:7}" >> $GITHUB_ENV
+          echo "release_name=${{ env.version }}" >> $GITHUB_ENV
 
       - name: Release Variables
         run: |
