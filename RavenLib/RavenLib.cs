@@ -1,6 +1,10 @@
 ﻿using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.RegularExpressions;
+using Microsoft.CodeAnalysis.CSharp.Scripting;
+using Microsoft.CodeAnalysis.Scripting;
+using System.Reflection;
 
 namespace RavenLib
 {
@@ -131,18 +135,67 @@ namespace RavenLib
             }
         }
 
+        public class HttpRequestContext
+        {
+            public string Method { get; set; } = "GET";
+            public string Path { get; set; } = string.Empty;
+            public Dictionary<string, string> Headers { get; set; } = new();
+            public string? Body { get; set; }
+            public string? Query { get; set; }
+            public Dictionary<string, string> Form { get; set; } = new();
+        }
+
         public class Server : Http
         {
             int port;
             string host;
             string Webdirectory;
             TcpListener? listener;
+            private readonly Dictionary<string, Func<HttpRequestContext, HttpResponse>> getRoutes = new();
+            private readonly Dictionary<string, Func<HttpRequestContext, HttpResponse>> postRoutes = new();
+
             public Server(int port, string host = "localhost", string webdirectory = "web")
             {
                 this.port = port;
                 this.host = host;
                 this.Webdirectory = webdirectory;
             }
+
+            public void RegisterRoute(string path, Func<HttpRequestContext, HttpResponse> handler)
+            {
+                getRoutes[path.TrimStart('/')] = handler;
+            }
+
+            public void RegisterPostRoute(string path, Func<HttpRequestContext, HttpResponse> handler)
+            {
+                postRoutes[path.TrimStart('/')] = handler;
+            }
+
+            public void Get(string path, Func<HttpRequestContext, HttpResponse> handler) => RegisterRoute(path, handler);
+            public void Post(string path, Func<HttpRequestContext, HttpResponse> handler) => RegisterPostRoute(path, handler);
+            public void Get(string path, string staticHtml) => RegisterRoute(path, ctx => new HttpResponse(staticHtml, 200) { ContentType = "text/html" });
+            public void Post(string path, string staticHtml) => RegisterPostRoute(path, ctx => new HttpResponse(staticHtml, 200) { ContentType = "text/html" });
+            public void Get(string path, Func<HttpRequestContext, string> handler, string? contentType = null)
+            {
+                RegisterRoute(path, ctx =>
+                {
+                    var resp = new HttpResponse(handler(ctx), 200);
+                    if (!string.IsNullOrEmpty(contentType))
+                        resp.ContentType = contentType;
+                    return resp;
+                });
+            }
+            public void Post(string path, Func<HttpRequestContext, string> handler, string? contentType = null)
+            {
+                RegisterPostRoute(path, ctx =>
+                {
+                    var resp = new HttpResponse(handler(ctx), 200);
+                    if (!string.IsNullOrEmpty(contentType))
+                        resp.ContentType = contentType;
+                    return resp;
+                });
+            }
+
             public void Start()
             {
                 listener = new TcpListener(IPAddress.Any, port);
@@ -155,6 +208,15 @@ namespace RavenLib
                     ThreadPool.QueueUserWorkItem(_ => HandleClient(client));
                 }
             }
+
+            public void Stop()
+            {
+                if (listener != null)
+                {
+                    listener.Stop();
+                }
+            }
+
             private void HandleClient(TcpClient client)
             {
                 using var stream = client.GetStream();
@@ -165,45 +227,118 @@ namespace RavenLib
                 var logger = new Logging();
                 Console.WriteLine($"Received request: {requestText}");
 
-                string Path = "index.html";
-                var parts = requestText.Split(' ');
-                if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]))
+                // Parse request line and headers
+                var lines = requestText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+                var requestLine = lines[0].Split(' ');
+                string method = requestLine.Length > 0 ? requestLine[0] : "GET";
+                string pathWithQuery = requestLine.Length > 1 ? requestLine[1] : "/";
+                string path = pathWithQuery.TrimStart('/');
+                string query = null;
+                int qIdx = path.IndexOf('?');
+                if (qIdx >= 0)
                 {
-                    Path = parts[1].TrimStart('/');
-                    if (string.IsNullOrEmpty(Path))
-                        Path = "index.html";
+                    query = path.Substring(qIdx + 1);
+                    path = path.Substring(0, qIdx);
+                }
+
+                var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                int bodyStart = -1;
+                for (int i = 1; i < lines.Length; i++)
+                {
+                    var line = lines[i];
+                    if (string.IsNullOrWhiteSpace(line))
+                    {
+                        bodyStart = i + 1;
+                        break;
+                    }
+                    var sep = line.IndexOf(':');
+                    if (sep > 0)
+                        headers[line.Substring(0, sep).Trim()] = line.Substring(sep + 1).Trim();
+                }
+
+                string? body = null;
+                if (bodyStart > 0 && bodyStart < lines.Length)
+                {
+                    body = string.Join("\n", lines.Skip(bodyStart));
+                }
+                // If Content-Length is set and body is incomplete, read the rest
+                if (method == "POST" && headers.TryGetValue("Content-Length", out var clStr) && int.TryParse(clStr, out var contentLength))
+                {
+                    int bodyBytes = Encoding.UTF8.GetByteCount(body ?? "");
+                    if (bodyBytes < contentLength)
+                    {
+                        var extra = new byte[contentLength - bodyBytes];
+                        int extraRead = stream.Read(extra, 0, extra.Length);
+                        body += Encoding.UTF8.GetString(extra, 0, extraRead);
+                    }
+                }
+
+                var form = new Dictionary<string, string>();
+                if (method == "POST" && headers.TryGetValue("Content-Type", out var ct) && ct.StartsWith("application/x-www-form-urlencoded"))
+                {
+                    var formBody = body ?? string.Empty;
+                    foreach (var pair in formBody.Split('&', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var kv = pair.Split('=');
+                        if (kv.Length == 2)
+                            form[Uri.UnescapeDataString(kv[0])] = Uri.UnescapeDataString(kv[1]);
+                    }
+                }
+
+                var context = new HttpRequestContext
+                {
+                    Method = method,
+                    Path = path,
+                    Headers = headers,
+                    Query = query,
+                    Body = body,
+                    Form = form
+                };
+
+                // Routing logic: try route table first, then static file
+                bool handled = false;
+                if (method == "POST" && postRoutes.TryGetValue(path, out var postHandler))
+                {
+                    var resp = postHandler(context);
+                    resp.ContentLength = resp.Body?.Length;
+                    var respBytes = resp.ToBytes();
+                    stream.Write(respBytes, 0, respBytes.Length);
+                    logger.CreateLogAsync($"200 OK: [POST ROUTE] {path}");
+                    handled = true;
+                }
+                else if (getRoutes.TryGetValue(path, out var handler))
+                {
+                    var resp = handler(context);
+                    resp.ContentLength = resp.Body?.Length;
+                    var respBytes = resp.ToBytes();
+                    stream.Write(respBytes, 0, respBytes.Length);
+                    logger.CreateLogAsync($"200 OK: [ROUTE] {path}");
+                    handled = true;
                 }
                 else
                 {
-                    StatusCode = 400;
-                    var response = new HttpResponse("<h1>400 Bad Request</h1>", StatusCode);
-                    response.ContentType = "text/html";
-                    response.ContentLength = response.Body?.Length;
-                    var responseBytes = response.ToBytes();
-                    stream.Write(responseBytes, 0, responseBytes.Length);
-                    logger.CreateLogAsync($"400 Bad Request: Malformed request").Wait();
-                    client.Close();
-                    return;
+                    // If not handled by route table, try static file (default to index.html if path is empty)
+                    string filePath = string.IsNullOrEmpty(path) ? "index.html" : path;
+                    string fileContent;
+                    try
+                    {
+                        fileContent = ReadFile(filePath, Webdirectory);
+                        logger.CreateLogAsync($"200 OK: {filePath}");
+                        StatusCode = 200;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error reading file {filePath}: {ex.Message}");
+                        StatusCode = 404;
+                        fileContent = "<h1>404 Not Found</h1>";
+                        logger.CreateLogAsync($"404 Not Found: {filePath}").Wait();
+                    }
+                    var fileResp = new HttpResponse(fileContent, StatusCode);
+                    fileResp.ContentType = MimeTypes.GetMimeType(filePath);
+                    fileResp.ContentLength = fileResp.Body?.Length;
+                    byte[] fileRespBytes = fileResp.ToBytes();
+                    stream.Write(fileRespBytes, 0, fileRespBytes.Length);
                 }
-
-                string fileContent;
-                try
-                {
-                    fileContent = ReadFile(Path, Webdirectory);
-                    logger.CreateLogAsync($"200 OK: {Path}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error reading file {Path}: {ex.Message}");
-                    StatusCode = 404;
-                    fileContent = "<h1>404 Not Found</h1>";
-                    logger.CreateLogAsync($"404 Not Found: {Path}").Wait();
-                }
-                var resp = new HttpResponse(fileContent, StatusCode);
-                resp.ContentType = MimeTypes.GetMimeType(Path);
-                resp.ContentLength = resp.Body?.Length;
-                byte[] respBytes = resp.ToBytes();
-                stream.Write(respBytes, 0, respBytes.Length);
                 client.Close();
             }
         }
@@ -303,6 +438,66 @@ namespace RavenLib
                 }
                 return mimeType;
             }
+        }
+    }
+
+    public static class Template
+    {
+        private static readonly Regex varPattern = new(@"\{\{(.*?)\}\}", RegexOptions.Compiled | RegexOptions.Singleline);
+        private static readonly ScriptOptions scriptOptions = ScriptOptions.Default
+            .AddReferences(typeof(object).Assembly)
+            .AddReferences(typeof(System.Linq.Enumerable).Assembly)
+            .AddImports("System", "System.Linq", "System.Collections.Generic");
+
+        public static string Render(string template, Dictionary<string, object?> context)
+        {
+            return varPattern.Replace(template, match =>
+            {
+                var code = match.Groups[1].Value.Trim();
+                // If it's a simple variable name, just substitute
+                if (Regex.IsMatch(code, @"^\w+$"))
+                {
+                    if (context != null && context.TryGetValue(code, out var value) && value != null)
+                        return value.ToString();
+                    return string.Empty;
+                }
+                // Otherwise, treat as C# code
+                try
+                {
+                    var globals = new TemplateGlobals(context);
+                    var result = CSharpScript.EvaluateAsync<object>(code, scriptOptions, globals).Result;
+                    return result?.ToString() ?? string.Empty;
+                }
+                catch (Exception ex)
+                {
+                    return $"[template error: {ex.Message}]";
+                }
+            });
+        }
+
+        public static string RenderFile(string path, Dictionary<string, object?> context)
+        {
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"Template file not found: {path}");
+            var template = File.ReadAllText(path);
+            return Render(template, context);
+        }
+
+        public class TemplateGlobals
+        {
+            private readonly Dictionary<string, object?> _context;
+            public TemplateGlobals(Dictionary<string, object?> context)
+            {
+                _context = context;
+            }
+            public object? this[string key] => _context.TryGetValue(key, out var v) ? v : null;
+            public Dictionary<string, object?> Context => _context;
+            public object? name => _context.TryGetValue("name", out var v) ? v : null;
+            public object? path => _context.TryGetValue("path", out var v) ? v : null;
+            public object? query => _context.TryGetValue("query", out var v) ? v : null;
+            public object? email => _context.TryGetValue("email", out var v) ? v : null;
+            public object? time => _context.TryGetValue("time", out var v) ? v : null;
+            public object? now => _context.TryGetValue("now", out var v) ? v : null;
         }
     }
 }
