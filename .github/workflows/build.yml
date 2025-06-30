@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write  # Needed to create GitHub releases
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -90,3 +93,4 @@ jobs:
           name: ${{ env.release_name }}
           draft: false
           prerelease: true
+          replacesArtifacts: true
