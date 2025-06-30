@@ -131,30 +131,49 @@ namespace RavenLib
             }
         }
 
+
         public class Server : Http
         {
+            private readonly TcpListener listener;
+            private volatile bool isRunning = false;
+
             int port;
             string host;
             string Webdirectory;
-            TcpListener? listener;
+
             public Server(int port, string host = "localhost", string webdirectory = "web")
             {
                 this.port = port;
                 this.host = host;
                 this.Webdirectory = webdirectory;
+
+                listener = new TcpListener(IPAddress.Any, port);
             }
+
             public void Start()
             {
-                listener = new TcpListener(IPAddress.Any, port);
+                isRunning = true;
                 listener.Start();
                 Console.WriteLine($"Server started at {host}:{port}");
-                int errorCount = 0;
-                while (true)
+                while (isRunning)
                 {
+                    if (!listener.Pending())
+                    {
+                        Thread.Sleep(100);
+                        continue;
+                    }
                     var client = listener.AcceptTcpClient();
                     ThreadPool.QueueUserWorkItem(_ => HandleClient(client));
                 }
+                listener.Stop();
             }
+
+            public void Stop()
+            {
+                isRunning = false;
+                listener.Stop();
+            }
+
             private void HandleClient(TcpClient client)
             {
                 using var stream = client.GetStream();

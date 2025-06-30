@@ -6,10 +6,16 @@ try
     var server = new Http.Server(port);
     Console.WriteLine($"Starting Raven Web Server on port {port}...");
 
+    bool shuttingDown = false;
     Console.CancelKeyPress += (_, eventArgs) =>
     {
-        Console.WriteLine("\nShutting down server...");
-        eventArgs.Cancel = true; // Ensure process termination is handled cleanly.
+        if (!shuttingDown)
+        {
+            shuttingDown = true;
+            Console.WriteLine("\nShutting down server...");
+            server.Stop();
+        }
+        eventArgs.Cancel = true; // Prevent abrupt process termination.
     };
 
     server.Start();
